@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ShieldCheck, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -81,7 +81,7 @@ export default function FormularioPage() {
         </div>
       </header>
 
-      <section className="mx-auto grid max-w-5xl gap-6 px-4 py-8 md:grid-cols-[1fr_320px]">
+      <section className="mx-auto max-w-2xl px-4 py-8">
         <Card>
           <CardHeader>
             <CardTitle>Formulario público</CardTitle>
@@ -123,20 +123,6 @@ export default function FormularioPage() {
             </form>
           </CardContent>
         </Card>
-
-        <aside className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ShieldCheck className="h-4 w-4" />
-                Carga segura
-              </CardTitle>
-              <CardDescription>
-                Las fotografías se validan antes de almacenarse y no se publican en internet.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </aside>
       </section>
     </main>
   );
