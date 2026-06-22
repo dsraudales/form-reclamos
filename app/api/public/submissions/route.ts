@@ -86,8 +86,13 @@ export async function POST(request: Request) {
 
     await audit("SUBMISSION_CREATED", { targetId: client.id });
     return NextResponse.json({ ok: true, message: "Solicitud recibida." });
-  } catch {
-    return genericError(400);
+  } catch (error) {
+    console.error("Public submission failed.", error);
+    const status =
+      error instanceof Error && (error.message === "invalid_file" || error.message === "malware_detected")
+        ? 400
+        : 500;
+    return genericError(status);
   }
 }
 

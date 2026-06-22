@@ -23,18 +23,30 @@ function readSecretFile(filePath: string) {
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   appUrl: process.env.NEXTAUTH_URL ?? "http://localhost:3000",
-  nextAuthSecret: required("NEXTAUTH_SECRET"),
+  get nextAuthSecret() {
+    return required("NEXTAUTH_SECRET");
+  },
   localLoginEnabled: process.env.ENABLE_LOCAL_LOGIN === "true",
   localLoginRateLimit: Number(process.env.LOCAL_LOGIN_RATE_LIMIT ?? "10"),
   publicRateLimit: Number(process.env.PUBLIC_SUBMISSION_RATE_LIMIT ?? "12"),
-  ipHashSecret: required("IP_HASH_SECRET"),
+  get ipHashSecret() {
+    return optional("IP_HASH_SECRET") ?? required("NEXTAUTH_SECRET");
+  },
   upstash: {
-    url: required("UPSTASH_REDIS_REST_URL"),
-    token: required("UPSTASH_REDIS_REST_TOKEN")
+    get url() {
+      return optional("UPSTASH_REDIS_REST_URL");
+    },
+    get token() {
+      return optional("UPSTASH_REDIS_REST_TOKEN");
+    }
   },
   supabase: {
-    url: required("SUPABASE_URL"),
-    serviceRoleKey: required("SUPABASE_SERVICE_ROLE_KEY"),
+    get url() {
+      return optional("SUPABASE_URL");
+    },
+    get serviceRoleKey() {
+      return optional("SUPABASE_SERVICE_ROLE_KEY");
+    },
     bucket: process.env.SUPABASE_STORAGE_BUCKET ?? "cree-client-photos"
   },
   clamav: {
@@ -48,3 +60,39 @@ export const env = {
     tenantId: optional("AZURE_AD_TENANT_ID")
   }
 };
+
+export const authProviderConfig = {
+  localEnabled: env.localLoginEnabled,
+  entraEnabled: Boolean(env.microsoft.clientId && env.microsoft.clientSecret && env.microsoft.tenantId)
+};
+
+export function hasUpstashConfig() {
+  return Boolean(env.upstash.url && env.upstash.token);
+}
+
+export function getUpstashConfig() {
+  if (!hasUpstashConfig()) {
+    throw new Error("Missing Upstash configuration.");
+  }
+
+  return {
+    url: env.upstash.url!,
+    token: env.upstash.token!
+  };
+}
+
+export function hasSupabaseConfig() {
+  return Boolean(env.supabase.url && env.supabase.serviceRoleKey);
+}
+
+export function getSupabaseConfig() {
+  if (!hasSupabaseConfig()) {
+    throw new Error("Missing required environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY");
+  }
+
+  return {
+    url: env.supabase.url!,
+    serviceRoleKey: env.supabase.serviceRoleKey!,
+    bucket: env.supabase.bucket
+  };
+}

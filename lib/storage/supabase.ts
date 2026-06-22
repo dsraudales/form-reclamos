@@ -1,11 +1,12 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { env } from "@/lib/env";
+import { getSupabaseConfig } from "@/lib/env";
 
 const globalForSupabase = globalThis as unknown as { supabaseAdmin?: SupabaseClient };
 
 function getClient(): SupabaseClient {
   if (!globalForSupabase.supabaseAdmin) {
-    globalForSupabase.supabaseAdmin = createClient(env.supabase.url, env.supabase.serviceRoleKey, {
+    const { url, serviceRoleKey } = getSupabaseConfig();
+    globalForSupabase.supabaseAdmin = createClient(url, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false }
     });
   }
@@ -19,10 +20,11 @@ export async function ensurePhotoBucket() {
     return;
   }
 
+  const { bucket } = getSupabaseConfig();
   const storage = getClient().storage;
-  const { data } = await storage.getBucket(env.supabase.bucket);
+  const { data } = await storage.getBucket(bucket);
   if (!data) {
-    const { error } = await storage.createBucket(env.supabase.bucket, { public: false });
+    const { error } = await storage.createBucket(bucket, { public: false });
     if (error && !/already exists/i.test(error.message)) {
       throw error;
     }
@@ -32,8 +34,9 @@ export async function ensurePhotoBucket() {
 }
 
 export async function uploadPhotoObject(objectKey: string, buffer: Buffer, mimeType: string) {
+  const { bucket } = getSupabaseConfig();
   const { error } = await getClient()
-    .storage.from(env.supabase.bucket)
+    .storage.from(bucket)
     .upload(objectKey, buffer, { contentType: mimeType, upsert: false });
 
   if (error) {
@@ -42,8 +45,9 @@ export async function uploadPhotoObject(objectKey: string, buffer: Buffer, mimeT
 }
 
 export async function getSignedPhotoUrl(objectKey: string, ttlSeconds: number) {
+  const { bucket } = getSupabaseConfig();
   const { data, error } = await getClient()
-    .storage.from(env.supabase.bucket)
+    .storage.from(bucket)
     .createSignedUrl(objectKey, ttlSeconds);
 
   if (error || !data) {
