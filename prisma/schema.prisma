@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AdminRole {
+  ADMIN
+  REVISOR
+  AUDITOR
+}
+
+enum AuditAction {
+  LOGIN
+  CLIENT_QUERY
+  PHOTO_VIEW
+  ROLE_CHANGE
+  USER_STATUS_CHANGE
+  USER_CREATED
+  SETTINGS_CHANGE
+  SUBMISSION_CREATED
+}
+
+model Client {
+  id         String        @id @default(uuid()) @db.Uuid
+  fullName   String        @map("full_name") @db.VarChar(180)
+  clientCode String        @map("client_code") @db.VarChar(80)
+  ipHash     String?       @map("ip_hash") @db.VarChar(128)
+  userAgent  String?       @map("user_agent") @db.VarChar(512)
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  photos     ClientPhoto[]
+
+  @@index([clientCode], map: "idx_clients_client_code")
+  @@index([fullName], map: "idx_clients_full_name")
+  @@index([createdAt], map: "idx_clients_created_at")
+  @@map("clients")
+}
+
+model ClientPhoto {
+  id           String   @id @default(uuid()) @db.Uuid
+  clientId     String   @map("client_id") @db.Uuid
+  bucket       String   @db.VarChar(100)
+  objectKey    String   @map("object_key") @db.VarChar(512)
+  originalName String?  @map("original_name") @db.VarChar(255)
+  mimeType     String   @map("mime_type") @db.VarChar(80)
+  sizeBytes    Int      @map("size_bytes")
+  sha256Hash   String   @map("sha256_hash") @db.Char(64)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId], map: "idx_client_photos_client_id")
+  @@index([sha256Hash], map: "idx_client_photos_sha256_hash")
+  @@map("client_photos")
+}
+
+model AdminUser {
+  id             String     @id @default(uuid()) @db.Uuid
+  email          String     @unique @db.VarChar(254)
+  name           String?    @db.VarChar(180)
+  passwordHash   String?    @map("password_hash") @db.VarChar(255)
+  role           AdminRole  @default(REVISOR)
+  active         Boolean    @default(true)
+  entraObjectId  String?    @unique @map("entra_object_id") @db.VarChar(128)
+  lastLoginAt    DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  auditLogs      AuditLog[] @relation("ActorAuditLogs")
+
+  @@index([email], map: "idx_admin_users_email")
+  @@index([active], map: "idx_admin_users_active")
+  @@map("admin_users")
+}
+
+model AuditLog {
+  id        String      @id @default(uuid()) @db.Uuid
+  actorId   String?     @map("actor_id") @db.Uuid
+  action    AuditAction
+  targetId  String?     @map("target_id") @db.VarChar(128)
+  ipHash    String?     @map("ip_hash") @db.VarChar(128)
+  metadata  Json?
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  actor     AdminUser?  @relation("ActorAuditLogs", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId], map: "idx_audit_logs_actor_id")
+  @@index([action], map: "idx_audit_logs_action")
+  @@index([createdAt], map: "idx_audit_logs_created_at")
+  @@map("audit_logs")
+}
+
+model AppSetting {
+  key       String   @id @db.VarChar(80)
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_settings")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="64" viewBox="0 0 160 64" role="img" aria-labelledby="title">
+  <title id="title">CREE</title>
+  <rect width="160" height="64" rx="8" fill="#124a72"/>
+  <path d="M24 42V22h20v6H31v8h13v6H24Zm31 0V22h20v6H62v2h11v6H62v6h-7Zm31 0V22h21v6H93v2h12v6H93v2h14v4H86Zm33 0V22h21v6h-14v2h12v6h-12v2h14v4h-21Z" fill="#fff"/>
+  <path d="M23 15h117" stroke="#55b6b0" stroke-width="4" stroke-linecap="round"/>
+</svg>

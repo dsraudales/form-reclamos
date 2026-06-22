@@ -1,0 +1,240 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - public
+      - internal
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  app:
+    build:
+      context: .
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      NEXTAUTH_SECRET_FILE: /run/secrets/nextauth_secret
+      IP_HASH_SECRET_FILE: /run/secrets/ip_hash_secret
+      MINIO_ACCESS_KEY_FILE: /run/secrets/minio_access_key
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_secret_key
+      AZURE_AD_CLIENT_SECRET_FILE: /run/secrets/azure_ad_client_secret
+    secrets:
+      - database_url
+      - nextauth_secret
+      - ip_hash_secret
+      - minio_access_key
+      - minio_secret_key
+      - azure_ad_client_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    networks:
+      - internal
+    expose:
+      - "3000"
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
+
+  migrate:
+    build:
+      context: .
+      target: builder
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL_FILE: /run/secrets/migration_database_url
+    secrets:
+      - migration_database_url
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    command: ["sh", "-c", "export DATABASE_URL=\"$$(cat \"$$DATABASE_URL_FILE\")\"; npx prisma migrate deploy"]
+    profiles:
+      - tools
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD_FILE: /run/secrets/app_db_password
+      MIGRATION_DB_USER: ${MIGRATION_DB_USER}
+      MIGRATION_DB_PASSWORD_FILE: /run/secrets/migration_db_password
+    command: ["postgres", "-c", "password_encryption=scram-sha-256", "-c", "ssl=on", "-c", "ssl_cert_file=/var/lib/postgresql/server.crt", "-c", "ssl_key_file=/var/lib/postgresql/server.key"]
+    secrets:
+      - postgres_password
+      - app_db_password
+      - migration_db_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/postgres/certs/server.crt:/var/lib/postgresql/server.crt:ro
+      - ./docker/postgres/certs/server.key:/var/lib/postgresql/server.key:ro
+    networks:
+      - internal
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - internal
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["export MINIO_ROOT_USER=\"$$(cat /run/secrets/minio_root_user)\" MINIO_ROOT_PASSWORD=\"$$(cat /run/secrets/minio_root_password)\"; exec minio server /data"]
+    environment:
+      MINIO_BROWSER: "off"
+    secrets:
+      - minio_root_user
+      - minio_root_password
+    volumes:
+      - minio-data:/data
+    networks:
+      - internal
+    expose:
+      - "9000"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-11-05T11-29-45Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+      MINIO_ACCESS_KEY_FILE: /run/secrets/minio_access_key
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_secret_key
+    secrets:
+      - minio_root_user
+      - minio_root_password
+      - minio_access_key
+      - minio_secret_key
+    networks:
+      - internal
+    entrypoint: ["/bin/sh", "/scripts/minio-init.sh"]
+    volumes:
+      - ./docker/minio/minio-init.sh:/scripts/minio-init.sh:ro
+      - ./docker/minio/app-policy.json:/scripts/app-policy.json:ro
+
+  clamav:
+    image: clamav/clamav:1.4
+    networks:
+      - internal
+    expose:
+      - "3310"
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --version >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1536M
+
+networks:
+  public:
+  internal:
+    internal: true
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+
+secrets:
+  database_url:
+    file: ./secrets/database_url.txt
+  nextauth_secret:
+    file: ./secrets/nextauth_secret.txt
+  ip_hash_secret:
+    file: ./secrets/ip_hash_secret.txt
+  minio_access_key:
+    file: ./secrets/minio_access_key.txt
+  minio_secret_key:
+    file: ./secrets/minio_secret_key.txt
+  azure_ad_client_secret:
+    file: ./secrets/azure_ad_client_secret.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  app_db_password:
+    file: ./secrets/app_db_password.txt
+  migration_db_password:
+    file: ./secrets/migration_db_password.txt
+  migration_database_url:
+    file: ./secrets/migration_database_url.txt
+  minio_root_password:
+    file: ./secrets/minio_root_password.txt
+  minio_root_user:
+    file: ./secrets/minio_root_user.txt

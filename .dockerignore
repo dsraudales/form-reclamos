@@ -1,0 +1,15 @@
+.git
+.next
+node_modules
+.env
+.env.*
+!.env.example
+secrets/
+secrets.example/
+nginx/certs/
+docker/postgres/certs/
+npm-debug.log
+Dockerfile
+docker-compose*.yml
+coverage
+README.md
