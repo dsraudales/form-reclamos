@@ -1,28 +1,19 @@
-import Redis from "ioredis";
-import { env } from "@/lib/env";
-
-const globalForRedis = globalThis as unknown as { redis?: Redis };
-
-export const redis = globalForRedis.redis ?? new Redis(env.redisUrl, { lazyConnect: true });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForRedis.redis = redis;
-}
+const store = new Map<string, { count: number; expiresAt: number }>();
 
 export async function rateLimit(key: string, limit: number, windowSeconds: number) {
-  if (redis.status === "wait") {
-    await redis.connect();
+  const now = Date.now();
+  const entry = store.get(key);
+
+  if (!entry || entry.expiresAt <= now) {
+    store.set(key, { count: 1, expiresAt: now + windowSeconds * 1000 });
+    return { allowed: true, remaining: limit - 1, resetSeconds: windowSeconds };
   }
 
-  const count = await redis.incr(key);
-  if (count === 1) {
-    await redis.expire(key, windowSeconds);
-  }
-
-  const ttl = await redis.ttl(key);
+  entry.count += 1;
+  const ttl = Math.ceil((entry.expiresAt - now) / 1000);
   return {
-    allowed: count <= limit,
-    remaining: Math.max(limit - count, 0),
-    resetSeconds: ttl > 0 ? ttl : windowSeconds
+    allowed: entry.count <= limit,
+    remaining: Math.max(limit - entry.count, 0),
+    resetSeconds: ttl
   };
 }
