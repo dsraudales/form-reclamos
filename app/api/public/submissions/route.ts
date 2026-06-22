@@ -83,7 +83,8 @@ export async function POST(request: Request) {
 
     await audit("SUBMISSION_CREATED", { targetId: client.id });
     return NextResponse.json({ ok: true, message: "Solicitud recibida." });
-  } catch {
+  } catch (error) {
+    console.error("Submission error:", error);
     return genericError(400);
   }
 }
