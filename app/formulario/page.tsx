@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ShieldCheck, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -10,27 +10,26 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { createClient } from "@/lib/supabase/client";
+
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 const schema = z.object({
   fullName: z.string().trim().min(3, "Ingrese su nombre completo.").max(180),
   clientCode: z.string().trim().min(3, "Ingrese el número o código de cliente.").max(80),
-  photos: z
+  photo: z
     .custom<FileList>()
-    .refine((files) => files && files.length >= 1, "Adjunte al menos una fotografía.")
-    .refine((files) => files && files.length <= 5, "Puede adjuntar un máximo de 5 fotografías.")
+    .refine((files) => files && files.length === 1, "Adjunte una fotografía.")
     .refine(
       (files) =>
         files &&
-        Array.from(files).every((file) =>
-          ["image/jpeg", "image/png", "image/webp"].includes(file.type)
-        ),
-      "Solo se permiten imágenes JPG, JPEG, PNG o WEBP."
+        ["image/jpeg", "image/png", "image/webp"].includes(files[0]?.type),
+      "Solo se permiten imágenes JPG, PNG o WEBP."
     )
     .refine(
-      (files) => files && Array.from(files).every((file) => file.size <= 5 * 1024 * 1024),
-      "Cada archivo debe pesar 5 MB o menos."
-    ),
-  website: z.string().max(0).optional()
+      (files) => files && files[0]?.size <= MAX_FILE_SIZE,
+      "El archivo debe pesar 20 MB o menos."
+    )
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -48,25 +47,55 @@ export default function FormularioPage() {
   async function onSubmit(values: FormValues) {
     setMessage(null);
     setIsError(false);
-    const body = new FormData();
-    body.append("fullName", values.fullName);
-    body.append("clientCode", values.clientCode);
-    body.append("website", values.website ?? "");
-    Array.from(values.photos).forEach((file) => body.append("photos", file));
 
-    const response = await fetch("/api/public/submissions", {
-      method: "POST",
-      body
-    });
+    try {
+      const file = values.photo[0];
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
 
-    if (!response.ok) {
+      const urlRes = await fetch("/api/public/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ext })
+      });
+
+      if (!urlRes.ok) {
+        throw new Error("upload-url failed");
+      }
+
+      const { path, token } = await urlRes.json();
+
+      const supabase = createClient();
+      const { error: uploadError } = await supabase.storage
+        .from(process.env.NEXT_PUBLIC_SUPABASE_BUCKET ?? "cree-client-photos")
+        .uploadToSignedUrl(path, token, file, { contentType: file.type });
+
+      if (uploadError) {
+        throw new Error(uploadError.message);
+      }
+
+      const submitRes = await fetch("/api/public/submissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: values.fullName,
+          clientCode: values.clientCode,
+          photoPath: path,
+          originalName: file.name,
+          mimeType: file.type,
+          sizeBytes: file.size
+        })
+      });
+
+      if (!submitRes.ok) {
+        throw new Error("submission failed");
+      }
+
+      reset();
+      setMessage("Solicitud recibida. Gracias por enviar la información.");
+    } catch {
       setIsError(true);
       setMessage("No fue posible procesar la solicitud. Revise los datos e intente nuevamente.");
-      return;
     }
-
-    reset();
-    setMessage("Solicitud recibida. Gracias por enviar la información.");
   }
 
   return (
@@ -81,11 +110,11 @@ export default function FormularioPage() {
         </div>
       </header>
 
-      <section className="mx-auto grid max-w-5xl gap-6 px-4 py-8 md:grid-cols-[1fr_320px]">
+      <section className="mx-auto max-w-2xl px-4 py-8">
         <Card>
           <CardHeader>
             <CardTitle>Formulario público</CardTitle>
-            <CardDescription>Complete los datos y adjunte fotografías claras del caso.</CardDescription>
+            <CardDescription>Complete los datos y adjunte una fotografía clara del recibo.</CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-5" onSubmit={handleSubmit(onSubmit)} noValidate>
@@ -101,15 +130,10 @@ export default function FormularioPage() {
                 {errors.clientCode ? <p className="text-sm text-destructive">{errors.clientCode.message}</p> : null}
               </div>
 
-              <div className="hidden" aria-hidden="true">
-                <Label htmlFor="website">Sitio web</Label>
-                <Input id="website" tabIndex={-1} autoComplete="off" {...register("website")} />
-              </div>
-
               <div className="space-y-2">
-                <Label htmlFor="photos">Fotografías</Label>
-                <Input id="photos" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple {...register("photos")} />
-                {errors.photos ? <p className="text-sm text-destructive">{String(errors.photos.message)}</p> : null}
+                <Label htmlFor="photo">Fotografía del recibo</Label>
+                <Input id="photo" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" {...register("photo")} />
+                {errors.photo ? <p className="text-sm text-destructive">{String(errors.photo.message)}</p> : null}
               </div>
 
               {message ? (
@@ -118,25 +142,11 @@ export default function FormularioPage() {
 
               <Button type="submit" disabled={isSubmitting}>
                 <Upload className="h-4 w-4" />
-                {isSubmitting ? "Enviando" : "Enviar solicitud"}
+                {isSubmitting ? "Enviando..." : "Enviar solicitud"}
               </Button>
             </form>
           </CardContent>
         </Card>
-
-        <aside className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ShieldCheck className="h-4 w-4" />
-                Carga segura
-              </CardTitle>
-              <CardDescription>
-                Las fotografías se validan antes de almacenarse y no se publican en internet.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </aside>
       </section>
     </main>
   );

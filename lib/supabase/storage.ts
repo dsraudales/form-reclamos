@@ -3,7 +3,7 @@ import { env } from "@/lib/env";
 
 const globalForSupabase = globalThis as unknown as { supabaseAdmin?: SupabaseClient };
 
-function getClient() {
+function getAdminClient() {
   if (globalForSupabase.supabaseAdmin) {
     return globalForSupabase.supabaseAdmin;
   }
@@ -19,21 +19,20 @@ function getClient() {
   return client;
 }
 
-export async function uploadPhotoObject(objectKey: string, buffer: Buffer, mimeType: string) {
-  const { error } = await getClient().storage
+export async function createSignedUploadUrl(objectKey: string) {
+  const { data, error } = await getAdminClient().storage
     .from(env.supabase.bucket)
-    .upload(objectKey, buffer, {
-      contentType: mimeType,
-      upsert: false
-    });
+    .createSignedUploadUrl(objectKey);
 
-  if (error) {
-    throw new Error(`Storage upload failed: ${error.message}`);
+  if (error || !data) {
+    throw new Error(`Signed upload URL failed: ${error?.message ?? "unknown"}`);
   }
+
+  return { signedUrl: data.signedUrl, token: data.token, path: data.path };
 }
 
 export async function getSignedPhotoUrl(objectKey: string, ttlSeconds: number) {
-  const { data, error } = await getClient().storage
+  const { data, error } = await getAdminClient().storage
     .from(env.supabase.bucket)
     .createSignedUrl(objectKey, ttlSeconds);
 
