@@ -1,10 +1,21 @@
-import Link from "next/link";
-import { ReactNode } from "react";
-import { SignOutButton } from "@/components/admin/sign-out-button";
-import { requireSession } from "@/lib/auth/session";
+"use client";
 
-export async function AdminShell({ children }: { children: ReactNode }) {
-  const session = await requireSession();
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
+
+export function AdminShell({ email, children }: { email: string; children: ReactNode }) {
+  const router = useRouter();
+
+  async function signOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/admin/login");
+    router.refresh();
+  }
+
   return (
     <main className="min-h-screen bg-muted/40">
       <header className="border-b bg-white">
@@ -15,15 +26,13 @@ export async function AdminShell({ children }: { children: ReactNode }) {
             </Link>
             <nav className="flex gap-4 text-sm text-muted-foreground">
               <Link href="/admin">Registros</Link>
-              <Link href="/admin/users">Usuarios</Link>
-              <Link href="/admin/audit">Auditoría</Link>
-              <Link href="/admin/settings">Configuración</Link>
             </nav>
           </div>
-          <div className="text-right text-sm">
-            <p className="font-medium">{session.user.email}</p>
-            <p className="text-muted-foreground">{session.user.role}</p>
-            <SignOutButton />
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-muted-foreground">{email}</span>
+            <Button variant="outline" size="sm" onClick={signOut}>
+              Salir
+            </Button>
           </div>
         </div>
       </header>

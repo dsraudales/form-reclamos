@@ -1,94 +1,49 @@
-import crypto from "crypto";
 import { NextResponse } from "next/server";
-import { headers } from "next/headers";
-import { env } from "@/lib/env";
+import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
-import { audit } from "@/lib/audit/audit";
-import { getIpHash } from "@/lib/security/ip";
-import { rateLimit } from "@/lib/security/rate-limit";
-import { getUploadLimits, publicSubmissionSchema, validateImageFile } from "@/lib/security/upload";
-import { uploadPhotoObject } from "@/lib/supabase/storage";
+import { env } from "@/lib/env";
 
-export const runtime = "nodejs";
+const submissionSchema = z.object({
+  fullName: z.string().trim().min(3).max(180),
+  clientCode: z.string().trim().min(3).max(80),
+  photoPath: z.string().min(1),
+  originalName: z.string().max(255),
+  mimeType: z.string().max(80),
+  sizeBytes: z.number().int().positive().max(20 * 1024 * 1024)
+});
 
 export async function POST(request: Request) {
   try {
-    const ipHash = await getIpHash();
-    const limit = await rateLimit(`submission:${ipHash}`, env.publicRateLimit, 60 * 60);
-    if (!limit.allowed) {
-      return genericError(429);
-    }
-
-    const formData = await request.formData();
-    const parsed = publicSubmissionSchema.safeParse({
-      fullName: formData.get("fullName"),
-      clientCode: formData.get("clientCode"),
-      website: formData.get("website") ?? ""
-    });
+    const body = await request.json();
+    const parsed = submissionSchema.safeParse(body);
 
     if (!parsed.success) {
-      return genericError(400);
+      return NextResponse.json({ message: "Datos inválidos." }, { status: 400 });
     }
 
-    const files = formData.getAll("photos").filter((item): item is File => item instanceof File);
-    const limits = await getUploadLimits();
-    if (files.length < 1 || files.length > limits.maxFiles) {
-      return genericError(400);
-    }
+    const { fullName, clientCode, photoPath, originalName, mimeType, sizeBytes } = parsed.data;
 
-    const validated: Array<{
-      file: File;
-      buffer: Buffer;
-      mimeType: string;
-      extension: string;
-      sha256Hash: string;
-    }> = [];
-
-    for (const file of files) {
-      const image = await validateImageFile(file, limits);
-      validated.push({ file, ...image });
-    }
-
-    const h = await headers();
-    const userAgent = h.get("user-agent")?.slice(0, 512);
-
-    const client = await prisma.$transaction(async (tx) => {
-      const createdClient = await tx.client.create({
-        data: {
-          fullName: parsed.data.fullName,
-          clientCode: parsed.data.clientCode,
-          ipHash,
-          userAgent
-        }
+    await prisma.$transaction(async (tx) => {
+      const client = await tx.client.create({
+        data: { fullName, clientCode }
       });
 
-      for (const image of validated) {
-        const objectKey = `clients/${createdClient.id}/${crypto.randomUUID()}.${image.extension}`;
-        await uploadPhotoObject(objectKey, image.buffer, image.mimeType);
-        await tx.clientPhoto.create({
-          data: {
-            clientId: createdClient.id,
-            bucket: env.supabase.bucket,
-            objectKey,
-            originalName: image.file.name.slice(0, 255),
-            mimeType: image.mimeType,
-            sizeBytes: image.buffer.length,
-            sha256Hash: image.sha256Hash
-          }
-        });
-      }
-
-      return createdClient;
+      await tx.clientPhoto.create({
+        data: {
+          clientId: client.id,
+          bucket: env.supabase.bucket,
+          objectKey: photoPath,
+          originalName: originalName.slice(0, 255),
+          mimeType,
+          sizeBytes,
+          sha256Hash: "client-upload"
+        }
+      });
     });
 
-    await audit("SUBMISSION_CREATED", { targetId: client.id });
     return NextResponse.json({ ok: true, message: "Solicitud recibida." });
   } catch (error) {
     console.error("Submission error:", error);
-    return genericError(400);
+    return NextResponse.json({ message: "No fue posible procesar la solicitud." }, { status: 500 });
   }
-}
-
-function genericError(status: number) {
-  return NextResponse.json({ ok: false, message: "No fue posible procesar la solicitud." }, { status });
 }

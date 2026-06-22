@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { audit } from "@/lib/audit/audit";
-import { requireApiSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { getSignedPhotoUrl } from "@/lib/supabase/storage";
-
-export const runtime = "nodejs";
+import { createClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
-  const session = await requireApiSession("AUDITOR");
-  if (!session) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
     return NextResponse.json({ message: "No autorizado." }, { status: 401 });
   }
 
@@ -22,9 +21,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: "No encontrado." }, { status: 404 });
   }
 
-  const ttlSetting = await prisma.appSetting.findUnique({ where: { key: "signed_url_ttl_seconds" } });
-  const ttlSeconds = typeof ttlSetting?.value === "number" ? Math.min(Math.max(ttlSetting.value, 60), 900) : 300;
-  const url = await getSignedPhotoUrl(photo.objectKey, ttlSeconds);
-  await audit("PHOTO_VIEW", { actorId: session.user.adminId, targetId: photo.id });
-  return NextResponse.json({ url, expiresIn: ttlSeconds });
+  const url = await getSignedPhotoUrl(photo.objectKey, 300);
+  return NextResponse.json({ url, expiresIn: 300 });
 }
