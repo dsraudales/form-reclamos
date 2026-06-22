@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { audit } from "@/lib/audit/audit";
 import { requireApiSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { getSignedPhotoUrl } from "@/lib/storage/supabase";
+import { getSignedPhotoUrl } from "@/lib/supabase/storage";
 
 export const runtime = "nodejs";
 

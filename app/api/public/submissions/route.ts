@@ -4,11 +4,10 @@ import { headers } from "next/headers";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/db/prisma";
 import { audit } from "@/lib/audit/audit";
-import { scanBufferWithClamAv } from "@/lib/security/clamav";
 import { getIpHash } from "@/lib/security/ip";
 import { rateLimit } from "@/lib/security/rate-limit";
 import { getUploadLimits, publicSubmissionSchema, validateImageFile } from "@/lib/security/upload";
-import { ensurePhotoBucket, uploadPhotoObject } from "@/lib/storage/supabase";
+import { uploadPhotoObject } from "@/lib/supabase/storage";
 
 export const runtime = "nodejs";
 
@@ -37,7 +36,6 @@ export async function POST(request: Request) {
       return genericError(400);
     }
 
-    await ensurePhotoBucket();
     const validated: Array<{
       file: File;
       buffer: Buffer;
@@ -48,7 +46,6 @@ export async function POST(request: Request) {
 
     for (const file of files) {
       const image = await validateImageFile(file, limits);
-      await scanBufferWithClamAv(image.buffer);
       validated.push({ file, ...image });
     }
 
