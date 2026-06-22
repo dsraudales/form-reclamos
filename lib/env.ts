@@ -24,7 +24,7 @@ export const env = {
   supabase: {
     url: required("NEXT_PUBLIC_SUPABASE_URL"),
     serviceRoleKey: required("SUPABASE_SERVICE_ROLE_KEY"),
-    bucket: process.env.SUPABASE_STORAGE_BUCKET ?? "client-photos"
+    bucket: process.env.SUPABASE_STORAGE_BUCKET ?? "cree-client-photos"
   },
   microsoft: {
     clientId: optional("AZURE_AD_CLIENT_ID"),
