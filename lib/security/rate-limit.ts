@@ -1,19 +1,17 @@
-import Redis from "ioredis";
+import { Redis } from "@upstash/redis";
 import { env } from "@/lib/env";
 
-const globalForRedis = globalThis as unknown as { redis?: Redis };
+const globalForRedis = globalThis as unknown as { upstash?: Redis };
 
-export const redis = globalForRedis.redis ?? new Redis(env.redisUrl, { lazyConnect: true });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForRedis.redis = redis;
+function getRedis(): Redis {
+  if (!globalForRedis.upstash) {
+    globalForRedis.upstash = new Redis({ url: env.upstash.url, token: env.upstash.token });
+  }
+  return globalForRedis.upstash;
 }
 
 export async function rateLimit(key: string, limit: number, windowSeconds: number) {
-  if (redis.status === "wait") {
-    await redis.connect();
-  }
-
+  const redis = getRedis();
   const count = await redis.incr(key);
   if (count === 1) {
     await redis.expire(key, windowSeconds);

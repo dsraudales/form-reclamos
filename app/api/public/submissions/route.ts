@@ -8,7 +8,7 @@ import { scanBufferWithClamAv } from "@/lib/security/clamav";
 import { getIpHash } from "@/lib/security/ip";
 import { rateLimit } from "@/lib/security/rate-limit";
 import { getUploadLimits, publicSubmissionSchema, validateImageFile } from "@/lib/security/upload";
-import { ensurePhotoBucket, uploadPhotoObject } from "@/lib/minio/client";
+import { ensurePhotoBucket, uploadPhotoObject } from "@/lib/storage/supabase";
 
 export const runtime = "nodejs";
 
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         await tx.clientPhoto.create({
           data: {
             clientId: createdClient.id,
-            bucket: env.minio.bucket,
+            bucket: env.supabase.bucket,
             objectKey,
             originalName: image.file.name.slice(0, 255),
             mimeType: image.mimeType,

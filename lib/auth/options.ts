@@ -1,4 +1,4 @@
-import argon2 from "argon2";
+import bcrypt from "bcryptjs";
 import type { NextAuthOptions } from "next-auth";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import CredentialsProvider from "next-auth/providers/credentials";
@@ -55,7 +55,7 @@ if (env.localLoginEnabled) {
           return null;
         }
 
-        const valid = await argon2.verify(admin.passwordHash, parsed.data.password);
+        const valid = await bcrypt.compare(parsed.data.password, admin.passwordHash);
         if (!valid) {
           return null;
         }
